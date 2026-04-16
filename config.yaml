@@ -1,0 +1,293 @@
+# =============================================================================
+# Stiebel Eltron HPA-O 6 CS Plus — Monitor Configuration
+# =============================================================================
+# Registri verificati con il documento ufficiale Stiebel Eltron:
+#   "Software-Erweiterung Internet Service Gateway — Modbus TCP/IP"
+#   (DM0000040850)
+#
+# NOTA INDIRIZZI: L'ISG usa indirizzi 1-based (es. reg 507 = AUSSENTEMPERATUR).
+# pymodbus usa 0-based → pymodbus_addr = ISG_registro - 1.
+#
+# Protocollo Modbus rilevato:
+#   FC04 (Input Registers)  — valori misurati (sola lettura)
+#   FC03 (Holding Registers)— setpoint e BETRIEBSART (lettura/scrittura)
+#
+# Tipi dati dal documento:
+#   tipo 2 → moltiplicatore 0.1, signed int16
+#   tipo 7 → moltiplicatore 0.01, signed int16
+#   tipo 8 → moltiplicatore 1, unsigned uint16 (enum/bitfield)
+#
+# Valore 0x8000 (32768) = "non disponibile" nel protocollo Stiebel → ignorato.
+# =============================================================================
+
+modbus:
+  host: "192.168.0.4"      # Indirizzo IP dell'ISG o della pompa di calore
+  port: 502                   # Porta Modbus TCP (default 502)
+  unit_id: 1                  # Slave ID Modbus
+  timeout: 5                  # Timeout connessione in secondi
+
+database:
+  host: "db"                  # Hostname del container PostgreSQL
+  port: 5432
+  name: "stiebel_monitor"
+  user: "stiebel"
+  password: "stiebel"
+
+polling:
+  interval_seconds: 60       # Intervallo di campionamento in secondi
+
+# =============================================================================
+# Mappatura Registri Modbus
+# =============================================================================
+# Ogni registro ha:
+#   address       — Indirizzo del registro Modbus (0-indexed, come vuole pymodbus)
+#   function_code — 3 = Holding Registers (FC03), 4 = Input Registers (FC04)
+#   tag           — Identificativo univoco del valore
+#   description   — Descrizione leggibile
+#   unit          — Unità di misura
+#   scale         — Fattore di scala (valore_reale = valore_raw * scale)
+#   data_type     — Tipo dato: int16 (signed) o uint16 (unsigned)
+#
+# NOTA sui tag: le descrizioni sono basate sulla documentazione ISG WPM3.
+# Verificare che i valori letti abbiano senso fisico per il proprio impianto.
+# =============================================================================
+
+registers:
+
+  # ── Impianto — valori generali (FC04 — Input Registers) ─────────────────
+  # Nota indirizzi: ISG usa indirizzi 1-based; pymodbus 0-based.
+  # Quindi: pymodbus_addr = ISG_registro - 1.
+  # Es. ISG reg 507 (AUSSENTEMPERATUR) → pymodbus addr 506.
+
+  - address: 506          # ISG 507 — AUSSENTEMPERATUR
+    function_code: 4
+    tag: "temp_esterna"
+    description: "Temperatura esterna"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Impianto"
+
+  # ── Riscaldamento (FC04) ─────────────────────────────────────────────────
+
+  - address: 507          # ISG 508 — ISTTEMPERATUR HK 1
+    function_code: 4
+    tag: "temp_mandata_hk1"
+    description: "Temp mandata HK1 (effettiva)"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Riscaldamento"
+
+  - address: 509          # ISG 510 — SOLLTEMPERATUR HK 1 (WPM 3)
+    function_code: 4
+    tag: "temp_set_hk1"
+    description: "Temp nominale HK1"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Riscaldamento"
+
+  - address: 512          # ISG 513 — VORLAUFISTTEMPERATUR WP
+    function_code: 4
+    tag: "temp_mandata_wp"
+    description: "Temp mandata WP (effettiva)"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Riscaldamento"
+
+  - address: 513          # ISG 514 — VORLAUFISTTEMPERATUR NHZ
+    function_code: 4
+    tag: "temp_mandata_nhz"
+    description: "Temp mandata NHZ (effettiva)"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Riscaldamento"
+
+  - address: 515          # ISG 516 — RUECKLAUFISTTEMPERATUR
+    function_code: 4
+    tag: "temp_ritorno"
+    description: "Temp ritorno impianto"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Riscaldamento"
+
+  - address: 542          # ISG 543 — VORLAUFTEMPERATUR WP 1
+    function_code: 4
+    tag: "temp_mandata_wp1"
+    description: "Temp mandata WP1"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Riscaldamento"
+
+  # ── Acqua calda sanitaria (FC04) ─────────────────────────────────────────
+
+  - address: 521          # ISG 522 — ISTTEMPERATUR Warmwasser
+    function_code: 4
+    tag: "temp_acs"
+    description: "Temp ACS (effettiva)"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Acqua calda"
+
+  - address: 522          # ISG 523 — SOLLTEMPERATUR Warmwasser
+    function_code: 4
+    tag: "temp_acs_set"
+    description: "Temp ACS (nominale)"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Acqua calda"
+
+  # ── Raffrescamento (FC04) ────────────────────────────────────────────────
+
+  - address: 523          # ISG 524 — ISTTEMPERATUR GEBLAESE Kühlen
+    function_code: 4
+    tag: "temp_raffrescamento"
+    description: "Temp raffrescamento (effettiva)"
+    unit: "K"
+    scale: 0.1
+    data_type: "int16"
+    category: "Raffrescamento"
+
+  # ── Impianto — puffer, pressione, portata (FC04) ─────────────────────────
+
+  - address: 517          # ISG 518 — PUFFERISTTEMPERATUR
+    function_code: 4
+    tag: "temp_puffer"
+    description: "Temp puffer (effettiva)"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Impianto"
+
+  - address: 518          # ISG 519 — PUFFERSOLLTEMPERATUR
+    function_code: 4
+    tag: "temp_puffer_set"
+    description: "Temp puffer (nominale)"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Impianto"
+
+  - address: 519          # ISG 520 — HEIZUNGSDRUCK (tipo 7 → ×0.01)
+    function_code: 4
+    tag: "pressione_riscaldamento"
+    description: "Pressione riscaldamento"
+    unit: "bar"
+    scale: 0.01
+    data_type: "int16"
+    category: "Impianto"
+
+  - address: 520          # ISG 521 — VOLUMENSTROM (tipo 2 → ×0.1)
+    function_code: 4
+    tag: "portata_acqua"
+    description: "Portata acqua impianto"
+    unit: "l/min"
+    scale: 0.1
+    data_type: "int16"
+    category: "Impianto"
+
+  - address: 543          # ISG 544 — HEISSGASTEMPERATUR WP 1
+    function_code: 4
+    tag: "temp_gas_caldo_wp1"
+    description: "Temp gas caldo WP1"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Impianto"
+
+  # ── Setpoint (FC03 — Holding Registers, lettura/scrittura) ───────────────
+
+  - address: 1501         # ISG 1502 — KOMFORT TEMPERATUR HK1
+    function_code: 3
+    tag: "set_comfort_hk1"
+    description: "Setpoint comfort HK1"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Setpoint"
+
+  - address: 1502         # ISG 1503 — ECO TEMPERATUR HK1
+    function_code: 3
+    tag: "set_eco_hk1"
+    description: "Setpoint eco HK1"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Setpoint"
+
+  - address: 1509         # ISG 1510 — KOMFORT TEMPERATUR Warmwasser
+    function_code: 3
+    tag: "set_comfort_acs"
+    description: "Setpoint comfort ACS"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Setpoint"
+
+  - address: 1510         # ISG 1511 — ECO TEMPERATUR Warmwasser
+    function_code: 3
+    tag: "set_eco_acs"
+    description: "Setpoint eco ACS"
+    unit: "°C"
+    scale: 0.1
+    data_type: "int16"
+    category: "Setpoint"
+
+# =============================================================================
+# Registro Stato Macchina
+# =============================================================================
+# FC03 indirizzo 1500 = Betriebsart (modalità operativa corrente/impostata).
+#
+# Valori osservati durante la scansione: 5 (estate/estate con raffrescamento)
+# Mappatura TENTATIVA basata su documentazione WPM3 — VERIFICARE con il
+# manuale del proprio sistema:
+#   0 = Emergenza
+#   1 = Standby (tutto spento)
+#   2 = Riscaldamento + ACS
+#   3 = Solo ACS
+#   4 = Solo Riscaldamento
+#   5 = Estate (Sommerbetrieb — no riscaldamento, solo ACS o standby)
+#   6 = Estate + Raffrescamento
+#   7 = Raffrescamento
+#
+# Se il sistema mostra uno stato sbagliato, aggiornare i 'values' di ciascuna
+# modalità in base al valore raw osservato nella propria installazione.
+# =============================================================================
+
+status:
+  # ISG registro 1501 (BETRIEBSART) → pymodbus addr 1500 (0-based)
+  # Valori definiti dal documento ufficiale Stiebel Eltron ISG Modbus:
+  #   0 = NOTBETRIEB        (Emergenza)
+  #   1 = BEREITSCHAFTSBETRIEB (Standby/Pronto)
+  #   2 = PROGRAMMBETRIEB   (Programma)
+  #   3 = KOMFORTBETRIEB    (Comfort)
+  #   4 = ECO-BETRIEB       (Eco)
+  #   5 = WARMWASSERBETRIEB (Solo acqua calda)
+  register: 1500
+  function_code: 3
+  data_type: "uint16"
+  modes:
+    standby:
+      values: [0, 1]
+      label: "Standby / Emergenza"
+      color: "transparent"
+    heating:
+      values: [2, 3, 4]
+      label: "Riscaldamento"
+      color: "rgba(255, 0, 0, 0.15)"
+    dhw:
+      values: [5]
+      label: "Solo ACS"
+      color: "rgba(255, 200, 0, 0.20)"
+    cooling:
+      values: [6, 7]
+      label: "Raffrescamento"
+      color: "rgba(0, 100, 255, 0.15)"
+
