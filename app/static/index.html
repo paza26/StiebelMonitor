@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stiebel Monitor</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --surface: #16213e;
+      --card: #0f3460;
+      --accent: #e94560;
+      --text: #eee;
+      --text-muted: #aaa;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Header ──────────────────────────────────── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1rem 2rem;
+      background: var(--surface);
+      border-bottom: 2px solid var(--card);
+    }
+    header h1 { font-size: 1.4rem; }
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.4rem 1rem; border-radius: 2rem;
+      font-weight: 600; font-size: 0.95rem;
+      transition: background 0.3s;
+    }
+    .status-badge .dot {
+      width: 12px; height: 12px; border-radius: 50%;
+      display: inline-block;
+    }
+
+    /* ── Layout ──────────────────────────────────── */
+    .container { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
+
+    /* ── Cards ───────────────────────────────────── */
+    .cards-title-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 0.75rem;
+    }
+    .cards-title-row > span { font-size: 1.05rem; color: var(--text-muted); }
+    .cards-actions { display: flex; gap: 0.4rem; }
+    .cards-actions button {
+      background: var(--card); color: var(--text-muted);
+      border: 1px solid #334; border-radius: 4px;
+      padding: 0.25rem 0.7rem; font-size: 0.78rem; cursor: pointer;
+    }
+    .cards-actions button:hover { background: #1a4a7a; color: var(--text); }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 0.65rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .card {
+      background: var(--card);
+      border: 2px solid transparent;
+      border-radius: 8px;
+      padding: 0.75rem 0.9rem;
+      cursor: pointer;
+      user-select: none;
+      transition: opacity 0.2s, border-color 0.15s, box-shadow 0.15s;
+      position: relative;
+    }
+    .card:hover { box-shadow: 0 0 0 1px rgba(255,255,255,0.12); }
+    .card.deselected { opacity: 0.35; }
+    .card.selected:hover { border-color: rgba(255,255,255,0.18); }
+
+    .card-header {
+      display: flex; align-items: center; gap: 0.4rem;
+      margin-bottom: 0.3rem;
+    }
+    .color-swatch {
+      display: inline-block; width: 10px; height: 10px;
+      border-radius: 2px; flex-shrink: 0;
+    }
+    .card .label { font-size: 0.75rem; color: var(--text-muted); line-height: 1.3; }
+    .card .value { font-size: 1.45rem; font-weight: 700; margin-top: 0.15rem; }
+    .card .unit  { font-size: 0.82rem; color: var(--text-muted); font-weight: 400; }
+
+    /* ── Chart controls ──────────────────────────── */
+    .chart-controls {
+      display: flex; flex-wrap: wrap; gap: 0.75rem;
+      align-items: flex-end;
+      margin-bottom: 1rem;
+    }
+    .chart-controls label {
+      font-size: 0.82rem; color: var(--text-muted);
+      display: block; margin-bottom: 0.2rem;
+    }
+    .chart-controls input {
+      background: var(--surface); color: var(--text);
+      border: 1px solid #334; border-radius: 4px;
+      padding: 0.45rem 0.6rem; font-size: 0.85rem;
+    }
+    .chart-controls button {
+      background: var(--card); color: var(--text);
+      border: 1px solid #334; border-radius: 4px;
+      padding: 0.45rem 0.7rem; font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .chart-controls button:hover { background: #1a4a7a; }
+    .btn-primary {
+      background: var(--accent) !important;
+      border-color: transparent !important;
+      font-weight: 600;
+      padding: 0.5rem 1.2rem !important;
+    }
+    .btn-primary:hover { opacity: 0.85; }
+    .presets-group { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+    .btn-live {
+      background: transparent;
+      border: 1px solid #446;
+      color: var(--text-muted);
+      border-radius: 4px;
+      padding: 0.45rem 0.8rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .btn-live.active { border-color: #0f0; color: #0f0; }
+    .btn-live:hover   { border-color: #88b; color: var(--text); }
+    .btn-poll {
+      background: #1a3a5a;
+      border: 1px solid #2a5a8a;
+      color: var(--text);
+      border-radius: 4px;
+      padding: 0.45rem 0.8rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .btn-poll:hover   { background: #1a4a7a; }
+    .btn-poll:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-poll.polling  { border-color: #00b0ff; color: #00b0ff; animation: poll-blink 0.8s step-end infinite; }
+    .btn-poll.success  { border-color: #00e676; color: #00e676; }
+    @keyframes poll-blink { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+
+    /* ── Chart ───────────────────────────────────── */
+    .chart-wrapper {
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 1rem;
+    }
+    canvas { width: 100% !important; }
+
+    /* ── Spinner ─────────────────────────────────── */
+    .spinner {
+      display: none; font-size: 0.85rem;
+      color: var(--text-muted); margin-left: 0.4rem;
+    }
+    .spinner.active { display: inline; }
+
+    /* ── Log console ─────────────────────────────── */
+    .log-section { margin-top: 1.5rem; }
+    .log-header {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--surface);
+      padding: 0.5rem 1rem;
+      border-radius: 8px 8px 0 0;
+      border-bottom: 1px solid #223;
+    }
+    .log-header .log-title { font-size: 0.9rem; font-weight: 600; }
+    .log-controls { display: flex; align-items: center; gap: 0.6rem; }
+    .log-controls label {
+      display: flex; align-items: center; gap: 0.3rem;
+      font-size: 0.78rem; color: var(--text-muted); cursor: pointer;
+    }
+    .log-controls button {
+      background: #2a3a5a; color: var(--text-muted);
+      border: 1px solid #334; border-radius: 4px;
+      padding: 0.2rem 0.65rem; font-size: 0.78rem; cursor: pointer;
+    }
+    .log-controls button:hover { background: #1a4a7a; color: var(--text); }
+    .log-body {
+      background: #080c18;
+      border-radius: 0 0 8px 8px;
+      height: 230px;
+      overflow-y: auto;
+      font-family: 'Courier New', Consolas, monospace;
+      font-size: 0.76rem;
+      padding: 0.4rem 0.8rem;
+    }
+    .log-entry {
+      padding: 0.04rem 0;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+      border-bottom: 1px solid #0d1225;
+    }
+    .log-ts   { color: #3a4a6a; }
+    .log-name { color: #7986cb; }
+    .log-INFO    { color: #4caf8a; }
+    .log-WARNING { color: #ff9800; }
+    .log-ERROR   { color: #f44336; }
+    .log-DEBUG   { color: #555; }
+    .log-empty   { color: #3a4a6a; font-style: italic; padding: 0.5rem 0; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🌡️ Stiebel Monitor — HPA-O 6 CS Plus</h1>
+  <div class="status-badge" id="statusBadge">
+    <span class="dot" id="statusDot"></span>
+    <span id="statusLabel">—</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Real-time cards -->
+  <div class="cards-title-row">
+    <span>Valori in tempo reale <span class="spinner" id="rtSpinner">⟳ aggiornamento…</span></span>
+    <div class="cards-actions">
+      <button onclick="selectAllTags()">Seleziona tutti</button>
+      <button onclick="deselectAllTags()">Deseleziona tutti</button>
+    </div>
+  </div>
+  <div id="cardsContainer"></div>
+
+  <!-- Chart controls (no tag select) -->
+  <div class="chart-controls">
+    <div>
+      <label for="startInput">Inizio</label>
+      <input type="datetime-local" id="startInput">
+    </div>
+    <div>
+      <label for="endInput">Fine</label>
+      <input type="datetime-local" id="endInput">
+    </div>
+    <div>
+      <label>Range rapido</label>
+      <div class="presets-group">
+        <button onclick="setPreset(1)">1h</button>
+        <button onclick="setPreset(6)">6h</button>
+        <button onclick="setPreset(24)">24h</button>
+        <button onclick="setPreset(168)">7g</button>
+        <button onclick="setPreset(720)">30g</button>
+      </div>
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button class="btn-primary" onclick="loadChart()">⟳ Aggiorna grafico</button>
+      <button id="liveBtn" class="btn-live" onclick="toggleLive()" title="Aggiornamento automatico ogni minuto"><span class="live-dot"></span> Live</button>
+      <button id="pollBtn" class="btn-poll" onclick="pollNow()" title="Richiedi nuovi dati al dispositivo ora">⬇ Richiedi dati</button>
+      <span class="spinner" id="chartSpinner">⟳</span>
+    </div>
+  </div>
+
+  <!-- Chart -->
+  <div class="chart-wrapper">
+    <canvas id="mainChart"></canvas>
+  </div>
+
+  <!-- Log console -->
+  <div class="log-section">
+    <div class="log-header">
+      <span class="log-title">🖥 Console</span>
+      <div class="log-controls">
+        <label>
+          <input type="checkbox" id="autoScrollCheck" checked>
+          Auto-scroll
+        </label>
+        <button onclick="clearLogs()">Pulisci</button>
+      </div>
+    </div>
+    <div class="log-body" id="logBody">
+      <div class="log-empty">In attesa di messaggi…</div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+/* ====================================================================
+   Stiebel Monitor — Frontend Logic
+   ==================================================================== */
+
+const API = '';
+
+// ── State ───────────────────────────────────────────────────────────
+let chartInstance   = null;
+let tagsMetadata    = [];   // [{tag, description, unit, address}, …]
+let modesConfig     = {};   // {heating: {label, color}, …}
+let tagColorMap     = {};   // tag → palette colour (stable mapping)
+let selectedTags    = new Set();  // tags currently plotted
+let cachedReadings  = null;       // last fetched readings (all tags)
+let cachedStatus    = null;       // last fetched status history
+let cachedRange     = null;       // last fetched range
+let liveMode        = false;      // auto-refresh every LIVE_INTERVAL_MS
+let liveTimer       = null;       // setInterval handle
+const LIVE_INTERVAL_MS = 60_000;
+
+// Log console state
+let logBuffer = [];   // displayed entries (capped at LOG_MAX)
+let logLastId = 0;    // highest id received (prevents re-fetch)
+const LOG_MAX = 300;
+
+// ── Colour palette ───────────────────────────────────────────────────
+const PALETTE = [
+  '#e94560','#00d2ff','#0fff50','#ff6f00',
+  '#aa66cc','#ffeb3b','#ff4081','#00e5ff',
+  '#76ff03','#ff9100','#7c4dff','#64ffda',
+  '#f50057','#00b0ff','#aeea00','#ff3d00',
+];
+
+function buildTagColorMap() {
+  tagColorMap = {};
+  tagsMetadata.forEach((t, i) => {
+    tagColorMap[t.tag] = PALETTE[i % PALETTE.length];
+  });
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  await Promise.all([fetchTags(), fetchModes()]);
+  buildTagColorMap();
+  // All tags selected by default
+  tagsMetadata.forEach(t => selectedTags.add(t.tag));
+
+  setPreset(6);
+  await refreshRealtime();
+  loadChart();
+
+  setInterval(refreshRealtime, 60_000);
+  pollLogs();
+  setInterval(pollLogs, 5_000);
+});
+
+// ── Fetch helpers ────────────────────────────────────────────────────
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+async function fetchTags()  { tagsMetadata = await fetchJSON(`${API}/api/tags`); }
+async function fetchModes() { modesConfig  = await fetchJSON(`${API}/api/config/modes`); }
+
+// ── Tag toggle (cards) ───────────────────────────────────────────────
+function toggleTag(tag) {
+  if (selectedTags.has(tag)) {
+    selectedTags.delete(tag);
+  } else {
+    selectedTags.add(tag);
+  }
+  // Update just this card's appearance
+  const card = document.querySelector(`.card[data-tag="${CSS.escape(tag)}"]`);
+  if (card) {
+    card.classList.toggle('selected',   selectedTags.has(tag));
+    card.classList.toggle('deselected', !selectedTags.has(tag));
+  }
+  // Redraw chart instantly from cache
+  if (cachedReadings !== null) {
+    drawChart(cachedReadings, cachedStatus, cachedRange);
+  }
+}
+
+function selectAllTags() {
+  tagsMetadata.forEach(t => selectedTags.add(t.tag));
+  document.querySelectorAll('#cardsContainer .card').forEach(c => {
+    c.classList.add('selected'); c.classList.remove('deselected');
+  });
+  if (cachedReadings !== null) drawChart(cachedReadings, cachedStatus, cachedRange);
+}
+
+function deselectAllTags() {
+  selectedTags.clear();
+  document.querySelectorAll('#cardsContainer .card').forEach(c => {
+    c.classList.remove('selected'); c.classList.add('deselected');
+  });
+  if (cachedReadings !== null) drawChart(cachedReadings, cachedStatus, cachedRange);
+}
+
+// ── Live mode + manual poll ───────────────────────────────────────────
+function toggleLive() {
+  liveMode = !liveMode;
+  const btn = document.getElementById('liveBtn');
+  btn.classList.toggle('active', liveMode);
+  if (liveMode) {
+    btn.title = 'Live attivo — clicca per disattivare';
+    liveTimer = setInterval(liveRefresh, LIVE_INTERVAL_MS);
+    logFrontend('🟢 Live ON — grafico aggiornato automaticamente ogni 60 s');
+  } else {
+    btn.title = 'Aggiornamento automatico del grafico ogni minuto';
+    if (liveTimer) clearInterval(liveTimer);
+    liveTimer = null;
+    logFrontend('⚫ Live OFF — aggiornamento automatico disattivato');
+  }
+}
+
+function liveRefresh() {
+  const s = document.getElementById('startInput').value;
+  const e = document.getElementById('endInput').value;
+  if (s && e) {
+    const duration = new Date(e) - new Date(s);
+    const newEnd   = new Date();
+    const newStart = new Date(newEnd.getTime() - duration);
+    document.getElementById('startInput').value = toLocalISO(newStart);
+    document.getElementById('endInput').value   = toLocalISO(newEnd);
+  }
+  logFrontend('⟳ Live: aggiornamento grafico in corso…');
+  loadChart();
+}
+
+async function pollNow() {
+  const btn = document.getElementById('pollBtn');
+  btn.disabled = true;
+  btn.classList.add('polling');
+  btn.innerHTML = '⟳ Sondaggio…';
+  logFrontend('⇩ Sondaggio manuale avviato — connessione al dispositivo…');
+  try {
+    await fetch(`${API}/api/poll`, { method: 'POST' });
+    await new Promise(r => setTimeout(r, 2200));
+    await refreshRealtime();
+    if (liveMode) liveRefresh(); else await loadChart();
+    btn.classList.remove('polling');
+    btn.classList.add('success');
+    btn.innerHTML = '✓ Dati ricevuti';
+    logFrontend('✅ Sondaggio completato — valori aggiornati');
+    setTimeout(() => {
+      btn.classList.remove('success');
+      btn.innerHTML = '⇩ Richiedi dati';
+      btn.disabled = false;
+    }, 1800);
+  } catch (err) {
+    console.error('pollNow failed:', err);
+    logFrontend('❌ Sondaggio fallito: ' + err.message);
+    btn.classList.remove('polling');
+    btn.innerHTML = '⇩ Richiedi dati';
+    btn.disabled = false;
+  }
+}
+
+// ── Time range helpers ───────────────────────────────────────────────
+function setPreset(hours) {
+  const now = new Date();
+  const start = new Date(now.getTime() - hours * 3600_000);
+  document.getElementById('startInput').value = toLocalISO(start);
+  document.getElementById('endInput').value   = toLocalISO(now);
+}
+
+function toLocalISO(d) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function getRange() {
+  const s = document.getElementById('startInput').value;
+  const e = document.getElementById('endInput').value;
+  return {
+    start: s ? new Date(s).toISOString() : '',
+    end:   e ? new Date(e).toISOString() : '',
+  };
+}
+
+// ── Real-time panel ──────────────────────────────────────────────────
+async function refreshRealtime() {
+  document.getElementById('rtSpinner').classList.add('active');
+  try {
+    const data = await fetchJSON(`${API}/api/readings/latest`);
+    renderCards(data.readings);
+    renderStatus(data.status);
+  } catch (err) {
+    console.error('Realtime refresh failed:', err);
+  } finally {
+    document.getElementById('rtSpinner').classList.remove('active');
+  }
+}
+
+function renderStatus(status) {
+  const colorMap = {
+    heating: { bg: 'rgba(255,0,0,0.18)',    dot: '#e94560' },
+    cooling: { bg: 'rgba(0,100,255,0.18)',   dot: '#00b0ff' },
+    dhw:     { bg: 'rgba(255,200,0,0.22)',   dot: '#ffeb3b' },
+    standby: { bg: 'rgba(128,128,128,0.15)', dot: '#888'    },
+  };
+  const c = colorMap[status.mode] || colorMap.standby;
+  document.getElementById('statusBadge').style.background = c.bg;
+  document.getElementById('statusDot').style.background   = c.dot;
+  document.getElementById('statusLabel').textContent       = status.label || 'Standby';
+}
+
+function renderCards(readings) {
+  const container = document.getElementById('cardsContainer');
+  if (tagsMetadata.length === 0) {
+    container.innerHTML = '<p style="color:var(--text-muted)">Nessun tag configurato</p>';
+    return;
+  }
+  const readingMap = Object.fromEntries((readings || []).map(r => [r.tag, r]));
+
+  const CAT_ORDER = ['Riscaldamento', 'Acqua calda', 'Raffrescamento', 'Impianto', 'Setpoint'];
+  const CAT_ICON  = { 'Riscaldamento': '\uD83D\uDD25', 'Acqua calda': '\uD83D\uDCA7', 'Raffrescamento': '\u2744\uFE0F', 'Impianto': '\u2699\uFE0F', 'Setpoint': '\uD83C\uDFAF' };
+  const CAT_CLASS = { 'Riscaldamento': 'cat-riscaldamento', 'Acqua calda': 'cat-acqua-calda', 'Raffrescamento': 'cat-raffrescamento', 'Impianto': 'cat-impianto', 'Setpoint': 'cat-setpoint' };
+  const catClass  = c => CAT_CLASS[c] || 'cat-generale';
+
+  const groups = {};
+  tagsMetadata.forEach(t => {
+    const cat = t.category || 'Generale';
+    (groups[cat] = groups[cat] || []).push(t);
+  });
+
+  const orderedCats = [
+    ...CAT_ORDER.filter(c => groups[c]),
+    ...Object.keys(groups).filter(c => !CAT_ORDER.includes(c)),
+  ];
+
+  container.innerHTML = orderedCats.map(cat => {
+    const icon  = CAT_ICON[cat] || '\uD83D\uDCCB';
+    const cards = groups[cat].map(t => {
+      const r      = readingMap[t.tag];
+      const color  = tagColorMap[t.tag] || '#888';
+      const active = selectedTags.has(t.tag);
+      const val    = r?.value != null ? r.value : '\u2014';
+      return `
+        <div class="card ${active ? 'selected' : 'deselected'}"
+             data-tag="${escHtml(t.tag)}"
+             onclick="toggleTag('${escHtml(t.tag)}')">
+          <div class="card-header">
+            <span class="color-swatch" style="background:${color}"></span>
+            <span class="label">${escHtml(t.description || t.tag)}</span>
+          </div>
+          <div class="value">${val}<span class="unit"> ${escHtml(t.unit || '')}</span></div>
+        </div>`;
+    }).join('');
+    return `
+      <div class="category-section ${catClass(cat)}">
+        <div class="category-header">
+          <span class="category-icon">${icon}</span>
+          <h3>${escHtml(cat)}</h3>
+        </div>
+        <div class="cards-grid">${cards}</div>
+      </div>`;
+  }).join('');
+}
+
+// ── Chart ────────────────────────────────────────────────────────────
+async function loadChart() {
+  const spinner = document.getElementById('chartSpinner');
+  spinner.classList.add('active');
+  const range = getRange();
+
+  try {
+    const allTags = tagsMetadata.map(t => t.tag);
+    if (allTags.length === 0) return;
+
+    const params = new URLSearchParams({ tag: allTags.join(',') });
+    if (range.start) params.set('start', range.start);
+    if (range.end)   params.set('end',   range.end);
+
+    const statusParams = new URLSearchParams();
+    if (range.start) statusParams.set('start', range.start);
+    if (range.end)   statusParams.set('end',   range.end);
+
+    const [readings, statusHistory] = await Promise.all([
+      fetchJSON(`${API}/api/readings?${params}`),
+      fetchJSON(`${API}/api/status?${statusParams}`),
+    ]);
+
+    cachedReadings = readings;
+    cachedStatus   = statusHistory;
+    cachedRange    = range;
+
+    drawChart(readings, statusHistory, range);
+  } catch (err) {
+    console.error('Chart load failed:', err);
+  } finally {
+    spinner.classList.remove('active');
+  }
+}
+
+function drawChart(readings, statusHistory, range) {
+  const ctx = document.getElementById('mainChart').getContext('2d');
+  const activeTags = [...selectedTags];
+
+  // Group readings by tag (only active ones)
+  const grouped = Object.fromEntries(activeTags.map(t => [t, []]));
+  readings.forEach(r => {
+    if (grouped[r.tag]) {
+      grouped[r.tag].push({ x: new Date(r.timestamp), y: r.value });
+    }
+  });
+
+  const meta = Object.fromEntries(tagsMetadata.map(t => [t.tag, t]));
+
+  const datasets = activeTags.map(tag => {
+    const color = tagColorMap[tag] || '#888';
+    const m     = meta[tag] || {};
+    return {
+      label: (m.description || tag) + (m.unit ? ` (${m.unit})` : ''),
+      data: grouped[tag],
+      borderColor: color,
+      backgroundColor: color + '26',
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0.3,
+      fill: false,
+    };
+  });
+
+  const annotations = buildStatusAnnotations(statusHistory, range);
+
+  if (chartInstance) chartInstance.destroy();
+
+  chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: {
+          type: 'time',
+          time: { tooltipFormat: 'dd/MM/yyyy HH:mm' },
+          ticks: { color: '#aaa', maxRotation: 45 },
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          min: range.start ? new Date(range.start) : undefined,
+          max: range.end   ? new Date(range.end)   : undefined,
+        },
+        y: {
+          ticks: { color: '#aaa' },
+          grid: { color: 'rgba(255,255,255,0.06)' },
+        },
+      },
+      plugins: {
+        legend: { display: false },   // no legend — cards are the legend
+        tooltip: {
+          backgroundColor: '#16213eee',
+          titleColor: '#eee',
+          bodyColor: '#ddd',
+        },
+        annotation: { annotations },
+      },
+    },
+  });
+}
+
+function buildStatusAnnotations(statusHistory, range) {
+  if (!statusHistory || statusHistory.length === 0) return {};
+  const annotations = {};
+  const rangeEnd = range.end ? new Date(range.end) : new Date();
+
+  for (let i = 0; i < statusHistory.length; i++) {
+    const entry = statusHistory[i];
+    if (entry.mode === 'standby') continue;
+
+    const xMin = new Date(entry.timestamp);
+    const xMax = i + 1 < statusHistory.length
+      ? new Date(statusHistory[i + 1].timestamp)
+      : rangeEnd;
+
+    annotations[`s${i}`] = {
+      type: 'box',
+      xMin, xMax,
+      backgroundColor: entry.color || 'transparent',
+      borderWidth: 0,
+      drawTime: 'beforeDatasetsDraw',
+    };
+  }
+  return annotations;
+}
+
+// ── Log console ──────────────────────────────────────────────────────
+async function pollLogs() {
+  try {
+    const entries = await fetchJSON(`${API}/api/logs?after=${logLastId}`);
+    if (!entries.length) return;
+
+    logLastId = Math.max(...entries.map(e => e.id));
+    logBuffer.push(...entries);
+    if (logBuffer.length > LOG_MAX) logBuffer = logBuffer.slice(-LOG_MAX);
+    renderLogs();
+  } catch {
+    // silent — avoid logging loop
+  }
+}
+
+function renderLogs() {
+  const body = document.getElementById('logBody');
+  if (!logBuffer.length) {
+    body.innerHTML = '<div class="log-empty">Nessun messaggio</div>';
+    return;
+  }
+
+  body.innerHTML = logBuffer.map(e => {
+    const ts = new Date(e.ts).toLocaleTimeString('it-IT', {
+      hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+    const lvlClass = `log-${e.level}`;
+    return `<div class="log-entry">` +
+      `<span class="log-ts">${ts}</span> ` +
+      `<span class="${lvlClass}">[${e.level.substring(0,4)}]</span> ` +
+      `<span class="log-name">${escHtml(e.logger)}</span>: ` +
+      `${escHtml(e.msg)}` +
+      `</div>`;
+  }).join('');
+
+  if (document.getElementById('autoScrollCheck')?.checked) {
+    body.scrollTop = body.scrollHeight;
+  }
+}
+
+function clearLogs() {
+  logBuffer = [];
+  document.getElementById('logBody').innerHTML =
+    '<div class="log-empty">Console pulita</div>';
+}
+
+// ── Utilities ────────────────────────────────────────────────────────
+function logFrontend(msg) {
+  const entry = {
+    id: Date.now() + Math.random(),
+    ts: new Date().toISOString(),
+    level: 'INFO',
+    logger: 'UI',
+    msg,
+  };
+  logBuffer.push(entry);
+  if (logBuffer.length > LOG_MAX) logBuffer = logBuffer.slice(-LOG_MAX);
+  renderLogs();
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+</script>
+</body>
+</html>
